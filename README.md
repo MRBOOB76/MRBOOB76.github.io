@@ -85,7 +85,7 @@
             </div>
             <p>Стабильный бесплатный инжектор. Быстрый запуск и стабильный фреймрейт во время выполнения тяжелых луа-скриптов.</p>
             <span class="warning-text">⚠️ (if web its not .now its virus!)</span>
-            <a href="https://xeno.now" target="_blank" class="btn">Скачать бесплатно</a>
+            <a href="https://xeno.now/download" target="_blank" class="btn">Скачать бесплатно</a>
         </div>
 
         <!-- SELIWARE -->
