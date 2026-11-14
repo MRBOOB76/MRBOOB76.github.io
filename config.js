@@ -1,8 +1,3 @@
-/*
-  Настройки сайта. Вставьте сюда ключи из Firebase (шаг 3 в README.md).
-  Это не секретные пароли: они нужны браузеру, чтобы подключиться к вашему проекту.
-  Защищают данные правила из файла firestore.rules.
-*/
 window.VECH_CONFIG = {
   firebase: {
     apiKey: "AIzaSyC1tdeO16ck2ID77hpWcRhhO6FNSCDfyCo",
@@ -12,9 +7,7 @@ window.VECH_CONFIG = {
     messagingSenderId: "632194275484",
     appId: "1:632194275484:web:a937fd2f2026de6c90b559"
   },
-
-  pushWorker: "",
-
+  pushWorker: "https://twilight-river-7527.xd24612500.workers.dev",
   iceServers: [
     { urls: "stun:stun.l.google.com:19302" },
     { urls: "stun:stun.cloudflare.com:3478" },
