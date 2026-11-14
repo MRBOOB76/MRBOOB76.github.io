@@ -1,14 +1,9 @@
 rules_version = '2';
-
-// Правила безопасности базы данных Вече.
-// Вставьте этот файл целиком в Firebase: Firestore Database -> Rules -> Publish.
-
 service cloud.firestore {
   match /databases/{database}/documents {
 
     function signedIn() { return request.auth != null; }
 
-    // Имя пользователя -> владелец. Читать по имени можно без входа (нужно, чтобы войти).
     match /usernames/{name} {
       allow get: if true;
       allow create: if signedIn()
@@ -17,19 +12,16 @@ service cloud.firestore {
       allow delete: if signedIn() && resource.data.uid == request.auth.uid;
     }
 
-    // Профили. Видят все вошедшие, менять может только владелец.
     match /users/{uid} {
       allow read: if signedIn();
       allow create, update: if signedIn() && request.auth.uid == uid;
     }
 
-    // «В сети».
     match /presence/{uid} {
       allow read: if signedIn();
       allow write: if signedIn() && request.auth.uid == uid;
     }
 
-    // Устройства (подтверждение входа).
     match /devices/{id} {
       allow get: if signedIn() && (resource == null || resource.data.uid == request.auth.uid);
       allow list: if signedIn() && resource.data.uid == request.auth.uid;
@@ -37,7 +29,6 @@ service cloud.firestore {
       allow update, delete: if signedIn() && resource.data.uid == request.auth.uid;
     }
 
-    // Блокировки.
     match /blocks/{id} {
       allow read: if signedIn() && resource.data.from == request.auth.uid;
       allow read: if signedIn() && resource.data.to == request.auth.uid;
@@ -45,7 +36,6 @@ service cloud.firestore {
       allow delete: if signedIn() && resource.data.from == request.auth.uid;
     }
 
-    // Чаты и сообщения.
     match /chats/{chatId} {
       allow get: if signedIn() && (resource == null || request.auth.uid in resource.data.members);
       allow list: if signedIn() && request.auth.uid in resource.data.members;
@@ -61,7 +51,6 @@ service cloud.firestore {
         function other() {
           return chat().members[0] == request.auth.uid ? chat().members[1] : chat().members[0];
         }
-        // Заблокированный не может писать в личный чат.
         function notBlocked() {
           return chat().type != 'dm'
             || !exists(/databases/$(database)/documents/blocks/$(other() + '_' + request.auth.uid));
@@ -70,11 +59,9 @@ service cloud.firestore {
         allow read: if member();
         allow create: if member() && notBlocked()
           && request.resource.data.get('from', request.resource.data.get('actor', '')) == request.auth.uid;
-        // Править текст можно только свои сообщения.
         allow update: if member()
           && resource.data.get('from', '') == request.auth.uid
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text', 'edited']);
-        // Удалять: свои, любые в группе у создателя, в личном чате (очистка переписки).
         allow delete: if member()
           && (resource.data.get('from', '') == request.auth.uid
               || chat().get('owner', '') == request.auth.uid
@@ -82,7 +69,6 @@ service cloud.firestore {
       }
     }
 
-    // Звонки (сигнализация).
     match /calls/{callId} {
       allow get: if signedIn() && (resource == null
         || resource.data.from == request.auth.uid || resource.data.to == request.auth.uid);
