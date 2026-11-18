@@ -1,27 +1,55 @@
 rules_version = '2';
+
+// Правила безопасности базы данных Вече.
+// Вставьте этот файл целиком в Firebase: Firestore Database -> Rules -> Publish.
+
 service cloud.firestore {
   match /databases/{database}/documents {
 
     function signedIn() { return request.auth != null; }
 
+    // КОД ДОСТУПА для друзей. Чтобы сменить код, поменяйте цифры ниже и нажмите «Опубликовать».
+    // Код хранится только здесь, на сайте его не видно.
+    function GATE() { return '6788'; }
+
+    // Проверка кода на первом экране: запрос get/gate/КОД проходит только с верным кодом.
+    match /gate/{code} {
+      allow get: if code == GATE();
+    }
+
+    // «Пропуск»: создаётся при регистрации, только с верным кодом. Читать нельзя никому.
+    match /invites/{uid} {
+      allow create: if signedIn() && request.auth.uid == uid
+        && request.resource.data.code == GATE();
+    }
+
+    // Имя пользователя -> владелец. Читать по имени можно без входа (нужно, чтобы войти).
+    // Создать имя может только тот, у кого есть «пропуск» (или уже есть профиль, это смена имени).
     match /usernames/{name} {
       allow get: if true;
       allow create: if signedIn()
         && request.resource.data.uid == request.auth.uid
-        && name.matches('^[a-z0-9_]{3,20}$');
+        && name.matches('^[a-z0-9_]{3,20}$')
+        && (exists(/databases/$(database)/documents/invites/$(request.auth.uid))
+            || exists(/databases/$(database)/documents/users/$(request.auth.uid)));
       allow delete: if signedIn() && resource.data.uid == request.auth.uid;
     }
 
+    // Профили. Видят все вошедшие, менять может только владелец. Создать профиль можно только с «пропуском».
     match /users/{uid} {
       allow read: if signedIn();
-      allow create, update: if signedIn() && request.auth.uid == uid;
+      allow create: if signedIn() && request.auth.uid == uid
+        && exists(/databases/$(database)/documents/invites/$(request.auth.uid));
+      allow update: if signedIn() && request.auth.uid == uid;
     }
 
+    // «В сети».
     match /presence/{uid} {
       allow read: if signedIn();
       allow write: if signedIn() && request.auth.uid == uid;
     }
 
+    // Устройства (подтверждение входа).
     match /devices/{id} {
       allow get: if signedIn() && (resource == null || resource.data.uid == request.auth.uid);
       allow list: if signedIn() && resource.data.uid == request.auth.uid;
@@ -29,6 +57,7 @@ service cloud.firestore {
       allow update, delete: if signedIn() && resource.data.uid == request.auth.uid;
     }
 
+    // Блокировки.
     match /blocks/{id} {
       allow read: if signedIn() && resource.data.from == request.auth.uid;
       allow read: if signedIn() && resource.data.to == request.auth.uid;
@@ -36,6 +65,7 @@ service cloud.firestore {
       allow delete: if signedIn() && resource.data.from == request.auth.uid;
     }
 
+    // Чаты и сообщения.
     match /chats/{chatId} {
       allow get: if signedIn() && (resource == null || request.auth.uid in resource.data.members);
       allow list: if signedIn() && request.auth.uid in resource.data.members;
@@ -51,6 +81,7 @@ service cloud.firestore {
         function other() {
           return chat().members[0] == request.auth.uid ? chat().members[1] : chat().members[0];
         }
+        // Заблокированный не может писать в личный чат.
         function notBlocked() {
           return chat().type != 'dm'
             || !exists(/databases/$(database)/documents/blocks/$(other() + '_' + request.auth.uid));
@@ -59,9 +90,15 @@ service cloud.firestore {
         allow read: if member();
         allow create: if member() && notBlocked()
           && request.resource.data.get('from', request.resource.data.get('actor', '')) == request.auth.uid;
+        // Править текст можно только свои сообщения.
         allow update: if member()
           && resource.data.get('from', '') == request.auth.uid
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text', 'edited']);
+        // Реакции: любой участник чата меняет только свою отметку в поле reacts.
+        allow update: if member()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reacts'])
+          && request.resource.data.reacts.diff(resource.data.get('reacts', {})).affectedKeys().hasOnly([request.auth.uid]);
+        // Удалять: свои, любые в группе у создателя, в личном чате (очистка переписки).
         allow delete: if member()
           && (resource.data.get('from', '') == request.auth.uid
               || chat().get('owner', '') == request.auth.uid
@@ -69,6 +106,21 @@ service cloud.firestore {
       }
     }
 
+    // Голосовые и видеосообщения (сами файлы, до ~700 КБ каждый).
+    match /chats/{chatId}/media/{mid} {
+      function mchat() { return get(/databases/$(database)/documents/chats/$(chatId)).data; }
+      function mmember() { return signedIn() && request.auth.uid in mchat().members; }
+      allow read: if mmember();
+      allow create: if mmember()
+        && request.resource.data.from == request.auth.uid
+        && request.resource.data.size <= 716800
+        && (mchat().type != 'dm'
+            || !exists(/databases/$(database)/documents/blocks/$((mchat().members[0] == request.auth.uid ? mchat().members[1] : mchat().members[0]) + '_' + request.auth.uid)));
+      allow delete: if mmember()
+        && (resource.data.from == request.auth.uid || mchat().get('owner', '') == request.auth.uid || mchat().type == 'dm');
+    }
+
+    // Звонки (сигнализация).
     match /calls/{callId} {
       allow get: if signedIn() && (resource == null
         || resource.data.from == request.auth.uid || resource.data.to == request.auth.uid);
@@ -84,6 +136,45 @@ service cloud.firestore {
         allow read, create: if signedIn()
           && (call().from == request.auth.uid || call().to == request.auth.uid);
         allow delete: if signedIn() && resource.data.from == request.auth.uid;
+      }
+    }
+
+    // Групповые звонки (сигнализация). Видят и входят только участники группы.
+    match /groupCalls/{gid} {
+      function gc() { return get(/databases/$(database)/documents/groupCalls/$(gid)).data; }
+      function gmember() { return signedIn() && request.auth.uid in gc().members; }
+
+      allow get: if signedIn() && (resource == null || request.auth.uid in resource.data.members);
+      allow list: if signedIn() && request.auth.uid in resource.data.members;
+      allow create: if signedIn()
+        && request.resource.data.host == request.auth.uid
+        && request.auth.uid in request.resource.data.members;
+      allow update, delete: if signedIn() && request.auth.uid in resource.data.members;
+
+      // Кто сейчас в звонке.
+      match /parts/{uid} {
+        allow read: if gmember();
+        allow create, update: if gmember() && request.auth.uid == uid;
+        // Удалить можно себя, а также того, кто молчит дольше 5 минут (кик).
+        allow delete: if gmember()
+          && (request.auth.uid == uid || resource.data.ts < request.time.toMillis() - 270000);
+      }
+
+      // Соединение между двумя участниками.
+      match /sig/{pair} {
+        allow get: if gmember() && (resource == null
+          || resource.data.from == request.auth.uid || resource.data.to == request.auth.uid);
+        allow list: if gmember() && resource.data.to == request.auth.uid;
+        allow list: if gmember() && resource.data.from == request.auth.uid;
+        allow create: if gmember() && request.resource.data.from == request.auth.uid;
+        allow update: if gmember()
+          && (resource.data.from == request.auth.uid || resource.data.to == request.auth.uid);
+        allow delete: if gmember() && resource.data.from == request.auth.uid;
+
+        match /ice/{iceId} {
+          allow read, create: if gmember();
+          allow delete: if gmember() && resource.data.from == request.auth.uid;
+        }
       }
     }
   }
