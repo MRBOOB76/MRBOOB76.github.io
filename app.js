@@ -939,8 +939,14 @@ function onSubErr(e){
 }
 function beat(){
   if (!S.me) return;
-  fdb.doc('presence/' + S.me.uid).set({t:FV().serverTimestamp()}).catch(function(){});
+  var ref = fdb.doc('presence/' + S.me.uid);
+  ref.set({t:FV().serverTimestamp()}).then(function(){ return ref.get(); }).then(function(sn){
+    /* сверяем часы с сервером: порядок сообщений не должен зависеть от часов на телефоне или ПК */
+    var v = sn && sn.exists ? tsMs(sn.data().t) : 0;
+    if (v) S.clockOff = v - Date.now();
+  }).catch(function(){});
 }
+function nowSrv(){ return Date.now() + (S.clockOff || 0); }
 function tsMs(t){ return t && t.toMillis ? t.toMillis() : (typeof t === 'number' ? t : 0); }
 
 async function startSession(uid){
@@ -1759,7 +1765,10 @@ async function ensureChat(id, chat){
 }
 async function postMsg(chatId, chatLike, payload, prevText){
   if (!S.chats[chatId]) await ensureChat(chatId, chatLike);
-  var ts = Date.now();
+  /* время по серверу, и строго позже всего, что мы уже видели в этом чате: моё сообщение всегда встаёт после чужого, которое я прочитал */
+  var known = (S.chats[chatId] && S.chats[chatId].last ? S.chats[chatId].last.ts || 0 : 0);
+  if (S.active === chatId && S.msgs.length) known = Math.max(known, S.msgs[S.msgs.length - 1].ts || 0);
+  var ts = Math.max(nowSrv(), known + 1);
   var body = Object.assign({}, payload, {ts:ts});
   await fdb.doc('chats/' + chatId + '/messages/' + ts.toString(36) + randHex(2)).set(body);
   var last = {from:payload.from || payload.actor || S.me.uid, text:String(prevText || '').slice(0,120), ts:ts};
