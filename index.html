@@ -43,10 +43,11 @@ html{color-scheme:light}
   color-scheme:dark;
 }
 *{box-sizing:border-box}
+[hidden]{display:none!important}
 html,body{height:100%}
 body{
   margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 var(--font-body);
-  padding-block:12px;
+  padding-top:12px;padding-bottom:max(24px,env(safe-area-inset-bottom,0px));
   padding-left:max(16px,env(safe-area-inset-left,0px));
   padding-right:max(16px,env(safe-area-inset-right,0px));
 }
